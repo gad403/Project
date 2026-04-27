@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NIFTY 50 Terminal Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .price-up { color: #00d09c; }
+        .price-down { color: #eb5b5b; }
+        .flash-up { animation: flashGreen 0.4s; }
+        .flash-down { animation: flashRed 0.4s; }
+        @keyframes flashGreen { from { background: rgba(0,208,156,0.15); } to { background: transparent; } }
+        @keyframes flashRed { from { background: rgba(235,91,91,0.15); } to { background: transparent; } }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #374151; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-sans h-screen flex flex-col overflow-hidden">
+
+    <header class="p-4 bg-gray-900 border-b border-gray-800 flex justify-between items-center shadow-md">
+        <div>
+            <h1 class="text-xl font-bold text-blue-400">NSE NIFTY 50 <span class="text-[10px] bg-blue-900 text-blue-200 px-2 py-0.5 rounded ml-2">5-PAISE TICK SIM</span></h1>
+        </div>
+        <div id="market-timer" class="font-mono text-sm text-gray-500"></div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden p-4 gap-4">
+        <div class="w-2/3 bg-gray-900 rounded-lg border border-gray-800 flex flex-col">
+            <div class="overflow-y-auto flex-1">
+                <table class="w-full text-left text-xs border-collapse">
+                    <thead class="sticky top-0 bg-gray-800 text-gray-400">
+                        <tr>
+                            <th class="p-3 border-b border-gray-700">SYMBOL</th>
+                            <th class="p-3 border-b border-gray-700 text-right">LTP</th>
+                            <th class="p-3 border-b border-gray-700 text-right">CHG%</th>
+                            <th class="p-3 border-b border-gray-700 text-right">HIGH</th>
+                            <th class="p-3 border-b border-gray-700 text-right">LOW</th>
+                        </tr>
+                    </thead>
+                    <tbody id="watchlist-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="w-1/3 flex flex-col gap-4 overflow-y-auto">
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-800 shadow-lg">
+                <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+                    <h2 id="depth-title" class="text-lg font-bold text-yellow-500">RELIANCE</h2>
+                    <span id="depth-ltp" class="font-mono font-bold text-xl">0.00</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold mb-2">BID</p>
+                        <div id="bid-list" class="space-y-1 font-mono text-[11px]"></div>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-500 font-bold mb-2 text-right">ASK</p>
+                        <div id="ask-list" class="space-y-1 font-mono text-[11px]"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-800 shadow-lg">
+                <h3 class="text-[10px] text-gray-500 font-bold uppercase mb-2">Intraday Trend (Last 60 Ticks)</h3>
+                <canvas id="priceChart" width="400" height="200" class="w-full h-40"></canvas>
+                <div class="flex justify-between text-[10px] text-gray-400 mt-2 font-mono border-t border-gray-800 pt-2">
+                    <span id="chart-low">L: 0.00</span>
+                    <span id="chart-high">H: 0.00</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+<script>
+    const TICK_SIZE = 0.05;
+    let selectedIndex = 0;
+    const MAX_HISTORY = 60;
+
+    const data = [
+        {s:"ADANIENT",p:3120.45},{s:"ADANIPORTS",p:1345.10},{s:"APOLLOHOSP",p:6240.00},{s:"ASIANPAINT",p:2850.30},{s:"AXISBANK",p:1080.50},
+        {s:"BAJAJ-AUTO",p:9150.00},{s:"BAJFINANCE",p:7240.20},{s:"BAJAJFINSV",p:1610.75},{s:"BEL",p:230.15},{s:"BHARTIARTL",p:1210.40},
+        {s:"BPCL",p:610.20},{s:"BRITANNIA",p:4950.00},{s:"CIPLA",p:1450.00},{s:"COALINDIA",p:445.60},{s:"DRREDDY",p:6120.80},
+        {s:"EICHERMOT",p:4620.00},{s:"GRASIM",p:2240.10},{s:"HCLTECH",p:1620.50},{s:"HDFCBANK",p:1445.30},{s:"HDFCLIFE",p:590.20},
+        {s:"HEROMOTOCO",p:4520.00},{s:"HINDALCO",p:610.45},{s:"HINDUNILVR",p:2380.15},{s:"ICICIBANK",p:1090.70},{s:"INDUSINDBK",p:1480.00},
+        {s:"INFY",p:1540.20},{s:"ITC",p:425.10},{s:"JSWSTEEL",p:870.25},{s:"KOTAKBANK",p:1780.40},{s:"LT",p:3640.80},
+        {s:"LTIM",p:4850.00},{s:"M&M",p:2040.15},{s:"MARUTI",p:12450.00},{s:"NESTLEIND",p:2540.00},{s:"NTPC",p:350.45},
+        {s:"ONGC",p:275.20},{s:"POWERGRID",p:285.90},{s:"RELIANCE",p:2940.50},{s:"SBILIFE",p:1470.10},{s:"SBIN",p:760.35},
+        {s:"SUNPHARMA",p:1540.70},{s:"TATACONSUM",p:1120.40},{s:"TATAMOTORS",p:980.15},{s:"TATASTEEL",p:165.40},{s:"TCS",p:3950.20},
+        {s:"TECHM",p:1280.90},{s:"TITAN",p:3740.00},{s:"ULTRACEMCO",p:9650.00},{s:"WIPRO",p:480.25},{s:"TRENT",p:3950.40}
+    ];
+
+    const scrips = data.map(item => ({
+        symbol: item.s,
+        ltp: item.p,
+        prev: item.p,
+        high: item.p,
+        low: item.p,
+        history: [item.p]
+    }));
+
+    function roundToTick(val) {
+        return Math.round(val / TICK_SIZE) * TICK_SIZE;
+    }
+
+    function updateMarket() {
+        scrips.forEach(stock => {
+            const oldLtp = stock.ltp;
+            const volatility = stock.ltp * 0.0004; 
+            const move = (Math.random() - 0.5) * volatility;
+            
+            stock.ltp = roundToTick(stock.ltp + move);
+            if (stock.ltp > stock.high) stock.high = stock.ltp;
+            if (stock.ltp < stock.low) stock.low = stock.ltp;
+
+            stock.history.push(stock.ltp);
+            if (stock.history.length > MAX_HISTORY) stock.history.shift();
+        });
+
+        renderWatchlist();
+        updateDepth();
+        drawChart();
+        document.getElementById('market-timer').innerText = new Date().toLocaleTimeString();
+    }
+
+    function renderWatchlist() {
+        const tbody = document.getElementById('watchlist-body');
+        let html = '';
+        scrips.forEach((stock, i) => {
+            const chgPct = (((stock.ltp - stock.prev) / stock.prev) * 100).toFixed(2);
+            const color = stock.ltp >= stock.prev ? 'price-up' : 'price-down';
+            const active = selectedIndex === i ? 'bg-gray-800' : '';
+            html += `
+                <tr class="border-b border-gray-800 hover:bg-gray-800 cursor-pointer ${active}" onclick="selectedIndex=${i}">
+                    <td class="p-3 font-bold">${stock.symbol}</td>
+                    <td class="p-3 text-right font-mono ${color}">${stock.ltp.toFixed(2)}</td>
+                    <td class="p-3 text-right font-mono ${color}">${chgPct}%</td>
+                    <td class="p-3 text-right text-gray-500 font-mono">${stock.high.toFixed(2)}</td>
+                    <td class="p-3 text-right text-gray-500 font-mono">${stock.low.toFixed(2)}</td>
+                </tr>`;
+        });
+        tbody.innerHTML = html;
+    }
+
+    function updateDepth() {
+        const stock = scrips[selectedIndex];
+        document.getElementById('depth-title').innerText = stock.symbol;
+        document.getElementById('depth-ltp').innerText = stock.ltp.toFixed(2);
+        document.getElementById('depth-ltp').className = `font-mono font-bold text-xl ${stock.ltp >= stock.prev ? 'text-green-400' : 'text-red-400'}`;
+
+        const bids = document.getElementById('bid-list');
+        const asks = document.getElementById('ask-list');
+        bids.innerHTML = ''; asks.innerHTML = '';
+
+        for (let i = 1; i <= 5; i++) {
+            const bPx = roundToTick(stock.ltp - (i * TICK_SIZE)).toFixed(2);
+            const aPx = roundToTick(stock.ltp + (i * TICK_SIZE)).toFixed(2);
+            bids.innerHTML += `<div class="flex justify-between text-green-500"><span>${bPx}</span><span class="text-gray-600">${Math.floor(Math.random()*1000 + 100)}</span></div>`;
+            asks.innerHTML += `<div class="flex justify-between text-red-500"><span class="text-gray-600">${Math.floor(Math.random()*1000 + 100)}</span><span>${aPx}</span></div>`;
+        }
+    }
+
+    function drawChart() {
+        const canvas = document.getElementById('priceChart');
+        const ctx = canvas.getContext('2d');
+        const stock = scrips[selectedIndex];
+        const history = stock.history;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (history.length < 2) return;
+
+        const min = Math.min(...history) * 0.9998;
+        const max = Math.max(...history) * 1.0002;
+        const range = max - min;
+
+        ctx.beginPath();
+        ctx.strokeStyle = stock.ltp >= stock.prev ? '#00d09c' : '#eb5b5b';
+        ctx.lineWidth = 2;
+
+        history.forEach((val, i) => {
+            const x = (i / (MAX_HISTORY - 1)) * canvas.width;
+            const y = canvas.height - ((val - min) / range) * canvas.height;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        document.getElementById('chart-low').innerText = `L: ${stock.low.toFixed(2)}`;
+        document.getElementById('chart-high').innerText = `H: ${stock.high.toFixed(2)}`;
+    }
+
+    setInterval(updateMarket, 1000);
+    updateMarket();
+</script>
+</body>
+</html>
